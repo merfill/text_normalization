@@ -133,7 +133,67 @@ def load_vocab(filename):
     return d
 
 
-def get_processing_clause(vocab_chars=None, lowercase=False, chars=False, allow_unk=True):
+def write_vocab(vocab, filename):
+    """Writes a vocab to a file
+
+    Writes one word per line.
+
+    Args:
+        vocab: iterable that yields word
+        filename: path to vocab file
+
+    Returns:
+        write a word per line
+
+    """
+    print("Writing vocab...")
+    with open(filename, "w") as f:
+        for i, word in enumerate(vocab):
+            if i != len(vocab) - 1:
+                f.write("{}\n".format(word))
+            else:
+                f.write(word)
+    print("- done. {} tokens".format(len(vocab)))
+
+
+def get_tag_vocab(datasets):
+    """Build vocabulary from an iterable of datasets objects
+
+    Args:
+        datasets: a list of dataset objects
+
+    Returns:
+        a set of all the words in the dataset
+
+    """
+    print("Building vocab...")
+    vocab_tags = set()
+    for dataset in datasets:
+        for _, tags in dataset:
+            vocab_tags.update(tags)
+    print("- done. {} tags".format(len(vocab_tags)))
+    return vocab_tags
+
+
+def get_char_vocab(dataset):
+    """Build char vocabulary from an iterable of datasets objects
+
+    Args:
+        dataset: a iterator yielding tuples (sentence, tags)
+
+    Returns:
+        a set of all the characters in the dataset
+
+    """
+    vocab_chars = set()
+    for clauses, _ in dataset:
+        for clause in clauses:
+            vocab_chars.update(clause)
+    print("- done. {} chars".format(len(vocab_chars)))
+    return vocab_chars
+
+
+def get_processing_clause(vocab):
     """Return lambda function that transform a clause (string) into list, of int corresponding to the ids of the clause and
     its corresponding characters.
 
@@ -145,13 +205,23 @@ def get_processing_clause(vocab_chars=None, lowercase=False, chars=False, allow_
 
     """
     def f(clause):
-        if vocab_chars is not None and chars == True:
-            char_ids = []
-            for char in clause:
-                # ignore chars out of vocabulary
-                if char in vocab_chars:
-                    char_ids += [vocab_chars[char]]
+        char_ids = []
+        for char in clause:
+            # ignore chars out of vocabulary
+            if char in vocab:
+                char_ids += [vocab[char]]
         return char_ids
+
+    return f
+
+
+def get_processing_tag(vocab):
+    def f(tag):
+        if tag in vocab:
+            tag_id = vocab[tag]
+        else:
+            raise Exception('Tag {} is basent in the vocabulary'.format(tag))
+        return tag_id
 
     return f
 

@@ -115,8 +115,7 @@ class BaseModel(object):
         self.add_summary() # tensorboard
 
         for epoch in range(self.config.nepochs):
-            self.logger.info("Epoch {:} out of {:}".format(epoch + 1,
-                        self.config.nepochs))
+            self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.config.nepochs))
 
             score = self.run_epoch(train, dev, epoch)
             self.config.lr *= self.config.lr_decay # decay learning rate
