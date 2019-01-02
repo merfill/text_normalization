@@ -56,7 +56,9 @@ class Config():
     dim_char = 100
 
     # dataset
-    filename_dev = filename_test = filename_train = 'data/en_train.csv'
+    filename_dev = 'data/dev.csv'
+    filename_test = 'data/test.csv'
+    filename_train = 'data/small_train.csv'
 
     max_iter = None # if not None, max number of examples in Dataset
 
@@ -68,7 +70,7 @@ class Config():
     train_embeddings = False
     nepochs          = 15
     dropout          = 0.5
-    batch_size       = 20
+    batch_size       = 500
     lr_method        = "adam"
     lr               = 0.001
     lr_decay         = 0.9

@@ -147,7 +147,7 @@ class ClassificationModel(BaseModel):
     def add_loss_op(self):
         """Defines the loss"""
         if self.config.use_crf:
-            log_likelihood, trans_params = tf.contrib.crf.crf_log_likelihood( self.logits, self.labels, self.sequence_lengths)
+            log_likelihood, trans_params = tf.contrib.crf.crf_log_likelihood(self.logits, self.labels, self.sequence_lengths)
             self.trans_params = trans_params # need to evaluate it for decoding
             self.loss = tf.reduce_mean(-log_likelihood)
         else:
@@ -190,7 +190,7 @@ class ClassificationModel(BaseModel):
             viterbi_sequences = []
             logits, trans_params = self.sess.run([self.logits, self.trans_params], feed_dict=fd)
 
-            # iterate over the sentences because no batching in vitervi_decode
+            # iterate over the sentences because no batching in viterbi_decode
             for logit, sequence_length in zip(logits, sequence_lengths):
                 logit = logit[:sequence_length] # keep only the valid steps
                 viterbi_seq, viterbi_score = tf.contrib.crf.viterbi_decode(logit, trans_params)
@@ -253,15 +253,13 @@ class ClassificationModel(BaseModel):
         for clauses, labels in minibatches(test, self.config.batch_size):
             labels_pred, sequence_lengths = self.predict_batch(clauses)
 
-            for lab, lab_pred, length in zip(labels, labels_pred,
-                                             sequence_lengths):
+            for lab, lab_pred, length in zip(labels, labels_pred, sequence_lengths):
                 lab      = lab[:length]
                 lab_pred = lab_pred[:length]
                 accs    += [a==b for (a, b) in zip(lab, lab_pred)]
 
                 lab_chunks      = set(get_chunks(lab, self.config.vocab_tags))
-                lab_pred_chunks = set(get_chunks(lab_pred,
-                                                 self.config.vocab_tags))
+                lab_pred_chunks = set(get_chunks(lab_pred, self.config.vocab_tags))
 
                 correct_preds += len(lab_chunks & lab_pred_chunks)
                 total_preds   += len(lab_pred_chunks)

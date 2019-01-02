@@ -1,12 +1,12 @@
 import numpy as np
-import os
+mport os
 import csv
 
 
 # shared global variables to be imported from model also
 UNK = "$UNK$"
 NUM = "$NUM$"
-NONE = "O"
+NONE = "PLAIN"
 
 
 # special error message
