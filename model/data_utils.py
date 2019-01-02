@@ -1,5 +1,5 @@
 import numpy as np
-mport os
+import os
 import csv
 
 
