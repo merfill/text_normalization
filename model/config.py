@@ -58,7 +58,7 @@ class Config():
     # dataset
     filename_dev = 'data/dev.csv'
     filename_test = 'data/test.csv'
-    filename_train = 'data/train.csv'
+    filename_train = 'data/small_train.csv'
 
     max_iter = None # if not None, max number of examples in Dataset
 
