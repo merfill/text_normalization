@@ -9,14 +9,14 @@ data = []
 # read data into memory
 print 'start reading data into memory...'
 with open('data/en_train.csv', 'rb') as f:
-    reader = csv.reader(f, delimiter=',', quotechar='"')
+    reader = csv.DictReader(f, delimiter=',', quotechar='"')
     rows = []
     sent_id = -1
     for row in reader:
-        if sent_id != row[0]:
+        if sent_id != row['sentence_id']:
             if sent_id != -1:
                 data.append(rows)
-            sent_id = row[0]
+            sent_id = row['sentence_id']
             rows = []
         rows += [row]
     data.append(rows)
@@ -53,7 +53,9 @@ for id in sorted(random.sample(data_ids, 10000)):
 def write_to_file(filename, data):
     print 'write data to {} file'.format(filename)
     with open(filename, 'wb') as f:
-        writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        fieldnames = ['sentence_id', 'token_id', 'class', 'before', 'after']
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writeheader()
         nrows = 0
         for rows in data:
             for row in rows:

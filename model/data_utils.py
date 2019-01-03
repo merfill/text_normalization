@@ -59,11 +59,11 @@ class Dataset(object):
     def __iter__(self):
         niter = 0
         with open(self.filename, 'rb') as f:
-            reader = csv.reader(f, delimiter=',', quotechar='"')
+            reader = csv.DictReader(f, delimiter=',', quotechar='"')
             clauses, tags = [], []
             sent_id = -1
             for row in reader:
-                if sent_id != row[0]:
+                if sent_id != row['sentence_id']:
                     if sent_id != -1:
                         niter += 1
                         if self.max_iter is not None and niter > self.max_iter:
@@ -71,8 +71,8 @@ class Dataset(object):
                         if len(clauses) > 0:
                             yield clauses, tags
                         clauses, tags = [], []
-                    sent_id = row[0]
-                clause, tag = row[3], row[2]
+                    sent_id = row['sentence_id']
+                clause, tag = row['before'], row['class']
                 if self.processing_clause is not None:
                     clause = self.processing_clause(clause)
                 if self.processing_tag is not None:
