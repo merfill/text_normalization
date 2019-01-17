@@ -38,7 +38,7 @@ class Config():
         self.vocab_tags  = load_vocab(self.filename_tags)
         self.vocab_chars = load_vocab(self.filename_chars)
 
-        self.nchars = len(self.vocab_chars)
+        self.nchars = len(self.vocab_chars) + 1
         self.ntags = len(self.vocab_tags)
 
         # 2. get processing functions that map str -> id
@@ -80,6 +80,8 @@ class Config():
     # model hyperparameters
     hidden_size_char = 100 # lstm on chars
     hidden_size_lstm = 300 # lstm on clause embeddings
+    num_encoder_layers = 3
+    max_length_clause = 50
 
     # NOTE: if both chars and crf, only 1.6x slower on GPU
     use_crf = True # if crf, training is 1.7x slower on CPU

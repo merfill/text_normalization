@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import csv
+import nltk
 
 
 # shared global variables to be imported from model also
@@ -93,40 +94,13 @@ class Dataset(object):
         return self.length
 
 
-def get_char_vocab(dataset):
-    """Build char vocabulary from an iterable of datasets objects
-
-    Args:
-        dataset: a iterator yielding tuples (sentence, tags)
-
-    Returns:
-        a set of all the characters in the dataset
-
-    """
-    vocab_char = set()
-    for clauses, _ in dataset:
-        for clause in clauses:
-            vocab_char.update(clause)
-
-    return vocab_char
-
-
 def load_vocab(filename):
-    """Loads vocab from a file
-
-    Args:
-        filename: (string) the format of the file must be one clause per line.
-
-    Returns:
-        d: dict[clause] = index
-
-    """
     try:
         d = dict()
         with open(filename) as f:
             for idx, clause in enumerate(f):
-                clause = clause.strip()
-                d[clause] = idx
+                clause = clause.rstrip('\n')
+                d[clause] = idx + 1
 
     except IOError:
         raise MyIOError(filename)
@@ -246,7 +220,7 @@ def _pad_sequences(sequences, pad_tok, max_length):
     return sequence_padded, sequence_length
 
 
-def pad_sequences(sequences, pad_tok, nlevels=1):
+def pad_sequences(sequences, pad_tok, nlevels=1, max_length_clause=None):
     """
     Args:
         sequences: a generator of list or tuple
@@ -261,7 +235,8 @@ def pad_sequences(sequences, pad_tok, nlevels=1):
         max_length = max(map(lambda x : len(x), sequences))
         sequence_padded, sequence_length = _pad_sequences(sequences, pad_tok, max_length)
     elif nlevels == 2:
-        max_length_clause = max([max(map(lambda x: len(x), seq)) for seq in sequences])
+        if max_length_clause is None:
+            max_length_clause = max([max(map(lambda x: len(x), seq)) for seq in sequences])
         sequence_padded, sequence_length = [], []
         for seq in sequences:
             # all clauses are same length now

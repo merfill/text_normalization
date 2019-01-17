@@ -8,11 +8,11 @@ from .general_utils import Progbar
 from .base_model import BaseModel
 
 
-class ClassificationModel(BaseModel):
-    """Specialized class of Model for Classification of input text sequence"""
+class GenModel(BaseModel):
+    """Specialized class of Model for generation text sequence from input text sequence"""
 
     def __init__(self, config):
-        super(ClassificationModel, self).__init__(config)
+        super(GenModel, self).__init__(config)
         self.idx_to_tag = {idx: tag for tag, idx in self.config.vocab_tags.items()}
 
 
@@ -249,24 +249,18 @@ class ClassificationModel(BaseModel):
 
         """
         accs = []
-        errors = []
         correct_preds, total_correct, total_preds = 0., 0., 0.
         for clauses, labels in minibatches(test, self.config.batch_size):
             labels_pred, sequence_lengths = self.predict_batch(clauses)
 
-            for lab, lab_pred, length, clause in zip(labels, labels_pred, sequence_lengths, clauses):
+            for lab, lab_pred, length in zip(labels, labels_pred, sequence_lengths):
                 lab      = lab[:length]
                 lab_pred = lab_pred[:length]
-                for (a, b, c) in zip(lab, lab_pred, clause):
-                    if a == b:
-                        accs += [1]
-                    else:
-                        accs += [0]
-                        errors += [(a, b, c)]
+                accs += [a==b for (a, b) in zip(lab, lab_pred)]
 
         acc = np.mean(accs)
 
-        return {"acc": 100*acc, 'errors': errors}
+        return {"acc": 100*acc}
 
 
     def predict(self, clauses_raw):
