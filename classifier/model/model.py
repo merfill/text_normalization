@@ -79,10 +79,18 @@ class ClassificationModel(BaseModel):
             _char_embeddings = tf.get_variable(name="_char_embeddings", dtype=tf.float32, shape=[self.config.nchars, self.config.dim_char])
             char_embeddings = tf.nn.embedding_lookup(_char_embeddings, self.char_ids, name="char_embeddings")
 
+            # put the time dimension on axis=1
+            s = tf.shape(char_embeddings)
+            char_embeddings = tf.reshape(char_embeddings, shape=[s[0]*s[1], s[-2], self.config.dim_char])
+            clause_lengths = tf.reshape(self.clause_lengths, shape=[s[0]*s[1]])
+
             # add multilayer RNN
             cells = [tf.contrib.rnn.GRUCell(self.config.hidden_size_char) for _ in range(self.config.num_encoder_layers)]
             cell = tf.contrib.rnn.MultiRNNCell(cells)
-            clause_embeddings, _  = tf.nn.dynamic_rnn(cell, char_embeddings, sequence_length=self.clause_lengths, dtype=tf.float32)
+            output, _  = tf.nn.dynamic_rnn(cell, char_embeddings, sequence_length=clause_lengths, dtype=tf.float32)
+
+            # shape = (batch size, max sentence length, char hidden size)
+            clause_embeddings = tf.reshape(output, shape=[s[0], s[1], self.config.hidden_size_char])
 
         self.clause_embeddings = tf.nn.dropout(clause_embeddings, self.dropout)
 
