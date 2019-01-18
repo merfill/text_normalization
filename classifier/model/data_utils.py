@@ -94,13 +94,16 @@ class Dataset(object):
         return self.length
 
 
-def load_vocab(filename):
+def load_vocab(filename, chars=False):
     try:
         d = dict()
         with open(filename) as f:
             for idx, clause in enumerate(f):
                 clause = clause.rstrip('\n')
-                d[clause] = idx + 1
+                if chars:
+                    d[clause] = idx + 1
+                else:
+                    d[clause] = idx
 
     except IOError:
         raise MyIOError(filename)

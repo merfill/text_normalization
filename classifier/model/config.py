@@ -36,7 +36,7 @@ class Config():
         """
         # 1. vocabulary
         self.vocab_tags  = load_vocab(self.filename_tags)
-        self.vocab_chars = load_vocab(self.filename_chars)
+        self.vocab_chars = load_vocab(self.filename_chars, chars=True)
 
         self.nchars = len(self.vocab_chars) + 1
         self.ntags = len(self.vocab_tags)
