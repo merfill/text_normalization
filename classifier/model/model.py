@@ -87,12 +87,11 @@ class ClassificationModel(BaseModel):
             # add multilayer RNN
             cells = [tf.contrib.rnn.GRUCell(self.config.hidden_size_char) for _ in range(self.config.num_encoder_layers)]
             cell = tf.contrib.rnn.MultiRNNCell(cells)
-            output, _  = tf.nn.dynamic_rnn(cell, char_embeddings, sequence_length=clause_lengths, dtype=tf.float32)
+            _ , states  = tf.nn.dynamic_rnn(cell, char_embeddings, sequence_length=clause_lengths, dtype=tf.float32)
 
             # shape = (batch size, max sentence length, char hidden size)
-            clause_embeddings = tf.reshape(output, shape=[s[0], s[1], self.config.hidden_size_char])
-
-        self.clause_embeddings = tf.nn.dropout(clause_embeddings, self.dropout)
+            clause_embeddings = tf.reshape(states[-1], shape=[s[0], s[1], self.config.hidden_size_char])
+            self.clause_embeddings = tf.nn.dropout(clause_embeddings, self.dropout)
 
 
     def add_logits_op(self):
@@ -103,9 +102,10 @@ class ClassificationModel(BaseModel):
             output = tf.nn.dropout(output, self.dropout)
 
         with tf.variable_scope("proj"):
-            W = tf.get_variable("W", dtype=tf.float32, shape=[2*self.config.hidden_size_lstm, self.config.ntags])
+            W = tf.get_variable("W", dtype=tf.float32, shape=[self.config.hidden_size_lstm, self.config.ntags])
             b = tf.get_variable("b", shape=[self.config.ntags], dtype=tf.float32, initializer=tf.zeros_initializer())
 
+            nsteps = tf.shape(output)[1]
             output = tf.reshape(output, [-1, self.config.hidden_size_lstm])
             pred = tf.matmul(output, W) + b
             self.logits = tf.reshape(pred, [-1, nsteps, self.config.ntags])
@@ -212,8 +212,7 @@ class ClassificationModel(BaseModel):
                 self.file_writer.add_summary(summary, epoch*nbatches + i)
 
         metrics = self.run_evaluate(dev)
-        msg = " - ".join(["{} {:04.2f}".format(k, v) for k, v in metrics.items()])
-        self.logger.info(msg)
+        self.logger.info(' - acc {:04.2f}'.format(metrics['acc']))
 
         return metrics["acc"]
 

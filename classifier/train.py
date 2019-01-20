@@ -1,5 +1,5 @@
 from model.data_utils import Dataset
-from model.classification_model import ClassificationModel
+from model.model import ClassificationModel
 from model.config import Config
 
 

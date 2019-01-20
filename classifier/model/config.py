@@ -41,6 +41,9 @@ class Config():
         self.nchars = len(self.vocab_chars) + 1
         self.ntags = len(self.vocab_tags)
 
+        print 'nchars: ', self.nchars
+        print 'ntags: ', self.ntags
+
         # 2. get processing functions that map str -> id
         self.processing_clause = get_processing_clause(self.vocab_chars)
         self.processing_tag = get_processing_tag(self.vocab_tags)
@@ -52,7 +55,7 @@ class Config():
     path_log   = dir_output + "log.txt"
 
     # embeddings
-    dim_clause = 300
+    dim_clause = 100
     dim_char = 100
 
     # dataset
@@ -79,7 +82,7 @@ class Config():
 
     # model hyperparameters
     hidden_size_char = 100 # lstm on chars
-    hidden_size_lstm = 300 # lstm on clause embeddings
+    hidden_size_lstm = 100 # lstm on clause embeddings
     num_encoder_layers = 3
     max_length_clause = 50
 
