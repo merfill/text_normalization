@@ -85,28 +85,40 @@ class ClassificationModel(BaseModel):
             clause_lengths = tf.reshape(self.clause_lengths, shape=[s[0]*s[1]])
 
             # add multilayer RNN
-            cells = [tf.contrib.rnn.GRUCell(self.config.hidden_size_char) for _ in range(self.config.num_encoder_layers)]
-            cell = tf.contrib.rnn.MultiRNNCell(cells)
-            _ , states  = tf.nn.dynamic_rnn(cell, char_embeddings, sequence_length=clause_lengths, dtype=tf.float32)
+            def create_cell(nsize, nlayers):
+                return tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(nsize) for _ in range(nlayers)])
+            cell_fw = create_cell(self.config.hidden_size_char, self.config.num_encoder_layers)
+            cell_bw = create_cell(self.config.hidden_size_char, self.config.num_encoder_layers)
+            _, states = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, char_embeddings, sequence_length=clause_lengths, dtype=tf.float32)
+
+            # read and concat output
+            output_fw, output_bw = states
+            output = tf.concat([output_fw[-1], output_bw[-1]], axis=-1)
 
             # shape = (batch size, max sentence length, char hidden size)
-            clause_embeddings = tf.reshape(states[-1], shape=[s[0], s[1], self.config.hidden_size_char])
+            clause_embeddings = tf.reshape(output, shape=[s[0], s[1], 2*self.config.hidden_size_char])
             self.clause_embeddings = tf.nn.dropout(clause_embeddings, self.dropout)
 
 
     def add_logits_op(self):
         with tf.variable_scope("word_rnn"):
-            cells = [tf.contrib.rnn.GRUCell(self.config.hidden_size_lstm) for _ in range(self.config.num_encoder_layers)]
-            cell = tf.contrib.rnn.MultiRNNCell(cells)
-            output, _  = tf.nn.dynamic_rnn(cell, self.clause_embeddings, sequence_length=self.sequence_lengths, dtype=tf.float32)
+            def create_cell(nsize, nlayers):
+                return tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(nsize) for _ in range(nlayers)])
+            cell_fw = create_cell(self.config.hidden_size_lstm, self.config.num_encoder_layers)
+            cell_bw = create_cell(self.config.hidden_size_lstm, self.config.num_encoder_layers)
+            outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, self.clause_embeddings, sequence_length=self.sequence_lengths, dtype=tf.float32)
+
+            output_fw, output_bw = outputs
+
+            output = tf.concat([output_fw, output_bw], axis=-1)
             output = tf.nn.dropout(output, self.dropout)
 
         with tf.variable_scope("proj"):
-            W = tf.get_variable("W", dtype=tf.float32, shape=[self.config.hidden_size_lstm, self.config.ntags])
+            W = tf.get_variable("W", dtype=tf.float32, shape=[2*self.config.hidden_size_lstm, self.config.ntags])
             b = tf.get_variable("b", shape=[self.config.ntags], dtype=tf.float32, initializer=tf.zeros_initializer())
 
             nsteps = tf.shape(output)[1]
-            output = tf.reshape(output, [-1, self.config.hidden_size_lstm])
+            output = tf.reshape(output, [-1, 2*self.config.hidden_size_lstm])
             pred = tf.matmul(output, W) + b
             self.logits = tf.reshape(pred, [-1, nsteps, self.config.ntags])
 
