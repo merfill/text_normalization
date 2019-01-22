@@ -71,7 +71,7 @@ class Config():
 
     # training
     train_embeddings = False
-    nepochs          = 5
+    nepochs          = 15
     dropout          = 0.5
     batch_size       = 50
     lr_method        = "adam"
@@ -83,7 +83,7 @@ class Config():
     # model hyperparameters
     hidden_size_char = 128 # lstm on chars
     hidden_size_lstm = 128 # lstm on clause embeddings
-    num_encoder_layers = 5
+    num_encoder_layers = 3
     max_length_clause = 50
 
     # NOTE: if both chars and crf, only 1.6x slower on GPU
