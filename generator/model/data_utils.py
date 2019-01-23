@@ -25,7 +25,7 @@ trimm your clause vectors.
 
 
 class Dataset(object):
-    def __init__(self, filename, labels=None, processing_chars=None, processing_words=None):
+    def __init__(self, filename, labels=None, processing_chars=None, processing_words=None, maxiter=None):
         self.filename = filename
         self.processing_chars = processing_chars
         self.processing_words = processing_words
@@ -35,6 +35,10 @@ class Dataset(object):
         else:
             self.labels = set()
             self.labels.update(labels)
+        if maxiter is None:
+            self.maxiter = None
+        else:
+            self.maxiter = maxiter
 
 
     def __iter__(self):
@@ -50,9 +54,10 @@ class Dataset(object):
                 if self.processing_words is not None:
                     after = self.processing_words(after)
                 yield before, after
-                n += 1
-                if n > 500:
-                    break
+                if self.maxiter is not None:
+                    n += 1
+                    if n >= self.maxiter:
+                        break
 
 
     def __len__(self):
@@ -66,14 +71,16 @@ class Dataset(object):
 def load_vocab(filename):
     try:
         d = dict()
+        v = dict()
         with open(filename) as f:
             for idx, clause in enumerate(f):
                 clause = clause.rstrip('\n')
                 # 0 is reserved for unknown token
                 d[clause] = idx + 1
+                v[idx + 1] = clause
     except IOError:
         raise MyIOError(filename)
-    return d
+    return d, v
 
 
 def write_vocab(vocab, filename):

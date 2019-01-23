@@ -46,8 +46,8 @@ class Config():
 
         """
         # 1. vocabulary
-        self.vocab_words  = load_vocab(self.filename_words)
-        self.vocab_chars = load_vocab(self.filename_chars)
+        self.vocab_words, self.words_vocab = load_vocab(self.filename_words)
+        self.vocab_chars, self.chars_vocab = load_vocab(self.filename_chars)
 
         # +1 for pad symbol with index 0
         self.char_vocab_size = len(self.vocab_chars) + 1
@@ -82,6 +82,7 @@ class Config():
 
     # model hyperparameters
     num_encoder_layers = 3
-    num_hidden = 512
+    num_hidden = 128
     use_attention = True
+    max_iterations = 20
 

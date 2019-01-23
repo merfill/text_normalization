@@ -13,41 +13,44 @@ class GenModel(BaseModel):
         super(GenModel, self).__init__(config)
         self.go_char_index = self.config.char_vocab_size
         self.eos_char_index = self.config.char_vocab_size + 1
+        self.config.words_vocab[0] = '<pad>'
 
 
     def add_placeholders(self):
         # shape = (batch size, max length of input clause in chars)
-        self.char_ids = tf.placeholder(tf.int32, shape=[None, None], name="char_ids")
+        self.source_ids = tf.placeholder(tf.int32, shape=[None, None], name="source_ids")
 
         # shape = (batch size, max length of output clause in words)
-        self.word_ids = tf.placeholder(tf.int32, shape=[None, None], name="word_ids")
+        self.target_ids = tf.placeholder(tf.int32, shape=[None, None], name="target_ids")
 
         # shape = (batch_size)
-        self.input_sequence_lengths = tf.placeholder(tf.int32, shape=[None], name="input_sequence_lengths")
-        self.output_sequence_lengths = tf.placeholder(tf.int32, shape=[None], name="output_sequence_lengths")
+        self.source_lengths = tf.placeholder(tf.int32, shape=[None], name="source_lengths")
+        self.target_lengths = tf.placeholder(tf.int32, shape=[None], name="target_lengths")
 
         # hyper parameters
         self.dropout = tf.placeholder(dtype=tf.float32, shape=[], name="dropout")
         self.lr = tf.placeholder(dtype=tf.float32, shape=[], name="lr")
 
         # dynamic calculated batch size
-        self.batch_size = tf.shape(self.word_ids)[0]
+        self.batch_size = tf.shape(self.source_ids)[0]
 
 
-    def get_feed_dict(self, before_clauses, after_clauses, lr=None, dropout=None):
+    def get_feed_dict(self, before_clauses, after_clauses=None, lr=None, dropout=None):
         # perform padding of the given data
-        char_ids, char_sequence_lengths = pad_sequences(sequences=before_clauses, pad_tok=PAD,
-                                                            go=self.go_char_index, eos=self.eos_char_index)
-        word_ids, word_sequence_lengths = pad_sequences(sequences=after_clauses, pad_tok=PAD, go=self.config.vocab_words[GO],
-                                                            eos=self.config.vocab_words[EOS])
+        source_ids, source_lengths = pad_sequences(sequences=before_clauses, pad_tok=PAD,
+                                                                go=self.go_char_index, eos=self.eos_char_index)
 
         # build feed dictionary
         feed = {
-            self.char_ids: char_ids,
-            self.input_sequence_lengths: char_sequence_lengths,
-            self.word_ids: word_ids,
-            self.output_sequence_lengths: word_sequence_lengths,
+            self.source_ids: source_ids,
+            self.source_lengths: source_lengths,
         }
+
+        if after_clauses is not None:
+            target_ids, target_lengths =\
+                pad_sequences(sequences=after_clauses, pad_tok=PAD, go=self.config.vocab_words[GO], eos=self.config.vocab_words[EOS])
+            feed[self.target_ids] = target_ids
+            feed[self.target_lengths] = target_lengths
 
         if lr is not None:
             feed[self.lr] = lr
@@ -61,25 +64,21 @@ class GenModel(BaseModel):
     def add_encoder_op(self):
         with tf.variable_scope('encoder'):
             # get char embeddings matrix
-            char_embeddings = tf.Variable(tf.random_uniform([self.config.char_vocab_size+2, self.config.char_embedding_size]))
-            self.char_embeddings = tf.nn.embedding_lookup(char_embeddings, self.char_ids)
+            _embedding = tf.Variable(tf.random_uniform([self.config.char_vocab_size+2, self.config.char_embedding_size]))
+            embedding = tf.nn.embedding_lookup(_embedding, self.source_ids)
 
             # add multilayer RNN
-            cells = [tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)]
-            cell = tf.contrib.rnn.MultiRNNCell(cells)
-            self.encoder_output, self.encoder_state = tf.nn.dynamic_rnn(cell, self.char_embeddings,
-                                                                            sequence_length=self.input_sequence_lengths, dtype=tf.float32)
+            cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
+            self.encoder_output, self.encoder_state = tf.nn.dynamic_rnn(cell, embedding, sequence_length=self.source_lengths, dtype=tf.float32)
 
 
     def add_decoder_cell_op(self):
         with tf.variable_scope("decoder_cell"):
             # get word embedding matrix
-            self.word_embedding_decoder = tf.Variable(tf.random_uniform([self.config.word_vocab_size, self.config.word_embedding_size]))
-            self.word_embeddings = tf.nn.embedding_lookup(self.word_embedding_decoder, self.word_ids)
+            self.target_embedding = tf.Variable(tf.random_uniform([self.config.word_vocab_size, self.config.word_embedding_size]))
 
-            # add multilayer RNN
-            cells = [tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)]
-            cell = tf.contrib.rnn.MultiRNNCell(cells)
+            # add multilayer RNN cell
+            cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
 
             # add attention layer if any
             if False and self.config.use_attention:
@@ -88,7 +87,6 @@ class GenModel(BaseModel):
                 self.decoder_initial_state = cell.zero_state(self.batch_size, tf.float32).clone(cell_state=self.encoder_state)
             else:
                 self.decoder_initial_state = self.encoder_state
-
             self.decoder_cell = cell
 
             # Add projection layer
@@ -97,35 +95,45 @@ class GenModel(BaseModel):
 
     def add_train_decoder_op(self):
         with tf.variable_scope("train_decoder"):
-            helper = tf.contrib.seq2seq.TrainingHelper(self.word_embeddings, self.output_sequence_lengths)
+            embeddings = tf.nn.embedding_lookup(self.target_embedding, self.target_ids)
+            helper = tf.contrib.seq2seq.TrainingHelper(embeddings, self.target_lengths)
             decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, self.decoder_initial_state, output_layer=self.projection_layer)
-            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
-            self.decoder_train_output = outputs.rnn_output
+            output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
+            self.train_output = output.rnn_output
+            self.train_sample_id = output.sample_id
 
 
-    def add_inference_decoder_op(self):
-        with tf.variable_scope("inference_decoder"):
+    def add_greedy_decoder_op(self):
+        with tf.variable_scope("greedy_decoder"):
+            helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+                embedding=self.target_embedding,
+                start_tokens=tf.fill([self.batch_size], self.config.vocab_words[GO]),
+                end_token=self.config.vocab_words[EOS])
+            decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, self.decoder_initial_state, output_layer=self.projection_layer)
+            output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=self.config.max_iterations)
+            self.greedy_output = output.sample_id
+
+
+    def add_beamsearch_decoder_op(self):
+        with tf.variable_scope("beamsearch_decoder"):
             decoder_initial_state = tf.contrib.seq2seq.tile_batch(self.decoder_initial_state, multiplier=self.config.beam_width)
             decoder = tf.contrib.seq2seq.BeamSearchDecoder(
                 cell=self.decoder_cell,
-                embedding=self.word_embedding_decoder,
+                embedding=self.target_embedding,
                 start_tokens=tf.fill([self.batch_size], self.config.vocab_words[GO]),
                 end_token=self.config.vocab_words[EOS],
                 initial_state=decoder_initial_state,
                 beam_width=self.config.beam_width,
                 output_layer=self.projection_layer,
                 length_penalty_weight=.0)
-            maximum_iterations = tf.round(tf.reduce_max(self.output_sequence_lengths) * 2)
-            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=maximum_iterations)
-            self.decoder_predicted_ids = outputs.predicted_ids
+            output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=self.config.max_iterations)
+            self.beamsearch_output = output.predicted_ids
 
 
     def add_loss_op(self):
         with tf.variable_scope('loss'):
-            losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.decoder_train_output, labels=self.word_ids)
-            mask = tf.sequence_mask(self.output_sequence_lengths)
-            losses = tf.boolean_mask(losses, mask)
-            self.loss = tf.reduce_mean(losses)
+            masks = tf.sequence_mask(lengths=self.target_lengths, dtype=tf.float32)
+            self.loss = tf.contrib.seq2seq.sequence_loss(logits=self.train_output, targets=self.target_ids, weights=masks)
 
         # for tensorboard
         tf.summary.scalar("loss", self.loss)
@@ -136,7 +144,8 @@ class GenModel(BaseModel):
         self.add_encoder_op()
         self.add_decoder_cell_op()
         self.add_train_decoder_op()
-        self.add_inference_decoder_op()
+        self.add_greedy_decoder_op()
+        #self.add_beamsearch_decoder_op()
         self.add_loss_op()
 
         # Generic functions that add training op and initialize session
@@ -144,10 +153,9 @@ class GenModel(BaseModel):
         self.initialize_session() # now self.sess is defined and vars are init
 
 
-    def predict_batch(self, before_clauses, after_clauses):
-        fd = self.get_feed_dict(before_clauses, after_clauses, dropout=1.0)
-        words_pred = self.sess.run(self.decoder_predicted_ids, feed_dict=fd)
-        return words_pred
+    def predict_batch(self, before_clauses):
+        fd = self.get_feed_dict(before_clauses, dropout=1.)
+        return self.sess.run(self.greedy_output, feed_dict=fd)
 
 
     def run_epoch(self, train, dev, epoch):
@@ -178,12 +186,20 @@ class GenModel(BaseModel):
     def to_text(self, ids, chars=True):
         if chars:
             delim = ''
-            vocab = seld.char_vocab
+            vocab = self.config.chars_vocab
+            go = self.go_char_index
+            eos = self.eos_char_index
         else:
             delim = ' '
-            vocab = self.word_vocab
+            vocab = self.config.words_vocab
+            go = self.config.vocab_words[GO]
+            eos = self.config.vocab_words[EOS]
         r = []
         for idx in ids:
+            if idx == eos:
+                break
+            elif idx == go:
+                continue
             r += [vocab[idx]]
         return delim.join(r)
 
@@ -193,13 +209,7 @@ class GenModel(BaseModel):
         errors = []
         correct_preds, total_correct, total_preds = 0., 0., 0.
         for before, after in minibatches(test, self.config.batch_size):
-            pred  = self.predict_batch(before, after)
-
-            print pred
-            print '---------'
-            print before
-            print '=========='
-            print after
+            pred  = self.predict_batch(before)
             for before, after, pred in zip(before, after, pred):
                 was_error = False
                 for (a, b) in zip(pred, after):
@@ -210,7 +220,6 @@ class GenModel(BaseModel):
                         was_error = True
                 if was_error:
                     errors += [(self.to_text(before), self.to_text(after, chars=False), self.to_text(pred, chars=False))]
-
         acc = np.mean(accs)
 
         return {"acc": 100*acc, 'errors': errors}
