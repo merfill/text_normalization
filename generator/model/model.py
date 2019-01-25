@@ -27,7 +27,6 @@ class GenModel(BaseModel):
         # shape = (batch_size)
         self.source_lengths = tf.placeholder(tf.int32, shape=[None], name="source_lengths")
         self.target_lengths = tf.placeholder(tf.int32, shape=[None], name="target_lengths")
-        self.target_learn_lengths = tf.placeholder(tf.int32, shape=[None], name="target_learn_lengths")
 
         # hyper parameters
         self.dropout = tf.placeholder(dtype=tf.float32, shape=[], name="dropout")
@@ -51,7 +50,7 @@ class GenModel(BaseModel):
         if after_clauses is not None:
             feed[self.target_ids], feed[self.target_lengths] =\
                 pad_sequences(sequences=after_clauses, pad_tok=PAD, go=self.config.vocab_words[GO], eos=self.config.vocab_words[EOS])
-            feed[self.target_learn_ids], feed[self.target_learn_lengths] =\
+            feed[self.target_learn_ids], _ =\
                 pad_sequences(sequences=after_clauses, pad_tok=PAD, eos=self.config.vocab_words[EOS])
 
         if lr is not None:
@@ -83,7 +82,7 @@ class GenModel(BaseModel):
             cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
 
             # add attention layer if any
-            if False and self.config.use_attention:
+            if self.config.use_attention:
                 attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(self.config.num_hidden, self.encoder_output, memory_sequence_length=None)
                 cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism, attention_layer_size=self.config.num_hidden)
                 self.decoder_initial_state = cell.zero_state(self.batch_size, tf.float32).clone(cell_state=self.encoder_state)
@@ -118,13 +117,12 @@ class GenModel(BaseModel):
 
     def add_beamsearch_decoder_op(self):
         with tf.variable_scope("beamsearch_decoder"):
-            decoder_initial_state = tf.contrib.seq2seq.tile_batch(self.decoder_initial_state, multiplier=self.config.beam_width)
             decoder = tf.contrib.seq2seq.BeamSearchDecoder(
                 cell=self.decoder_cell,
                 embedding=self.target_embedding,
                 start_tokens=tf.fill([self.batch_size], self.config.vocab_words[GO]),
                 end_token=self.config.vocab_words[EOS],
-                initial_state=decoder_initial_state,
+                initial_state=tf.contrib.seq2seq.tile_batch(self.decoder_initial_state, multiplier=self.config.beam_width),
                 beam_width=self.config.beam_width,
                 output_layer=self.projection_layer,
                 length_penalty_weight=.0)
@@ -160,7 +158,7 @@ class GenModel(BaseModel):
         return self.sess.run(self.greedy_output, feed_dict=fd)
 
 
-    def run_epoch(self, train, dev, epoch):
+    def run_epoch(self, train, dev, epoch, print_test=False):
         # progbar stuff for logging
         batch_size = self.config.batch_size
         nbatches = (len(train) + batch_size - 1) // batch_size
@@ -179,8 +177,9 @@ class GenModel(BaseModel):
 
         metrics = self.run_evaluate(dev)
         self.logger.info(' - acc: {:04.2f}'.format(metrics['acc']))
-        for err in metrics['errors']:
-            self.logger.info('{} => {} ? {}'.format(err[0], err[1], err[2]))
+        if print_test:
+            for err in metrics['errors']:
+                self.logger.info('{} => {} ? {}'.format(err[0], err[1], err[2]))
 
         return metrics["acc"]
 

@@ -117,7 +117,10 @@ class BaseModel(object):
         for epoch in range(self.config.nepochs):
             self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.config.nepochs))
 
-            score = self.run_epoch(train, dev, epoch)
+            print_test = False
+            if epoch + 1 == self.config.nepochs:
+                print_test = True
+            score = self.run_epoch(train, dev, epoch, print_test)
             self.config.lr *= self.config.lr_decay # decay learning rate
 
             # early stopping and saving best parameters
