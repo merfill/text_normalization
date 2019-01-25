@@ -12,9 +12,9 @@ def main():
     model.build()
 
     # create datasets
-    dev = Dataset(config.filename_dev, labels=['DATE'], processing_chars=config.processing_chars, processing_words=config.processing_words, maxiter=50)
+    dev = Dataset(config.filename_dev, labels=['DATE'], processing_chars=config.processing_chars, processing_words=config.processing_words)
     print 'load dev: {}'.format(len(dev))
-    train = Dataset(config.filename_train, labels=['DATE'], processing_chars=config.processing_chars, processing_words=config.processing_words, maxiter=10000)
+    train = Dataset(config.filename_train, labels=['DATE'], processing_chars=config.processing_chars, processing_words=config.processing_words)
     print 'load train: {}'.format(len(train))
 
     # train model

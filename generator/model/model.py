@@ -22,10 +22,12 @@ class GenModel(BaseModel):
 
         # shape = (batch size, max length of output clause in words)
         self.target_ids = tf.placeholder(tf.int32, shape=[None, None], name="target_ids")
+        self.target_learn_ids = tf.placeholder(tf.int32, shape=[None, None], name="target_learn_ids")
 
         # shape = (batch_size)
         self.source_lengths = tf.placeholder(tf.int32, shape=[None], name="source_lengths")
         self.target_lengths = tf.placeholder(tf.int32, shape=[None], name="target_lengths")
+        self.target_learn_lengths = tf.placeholder(tf.int32, shape=[None], name="target_learn_lengths")
 
         # hyper parameters
         self.dropout = tf.placeholder(dtype=tf.float32, shape=[], name="dropout")
@@ -47,10 +49,10 @@ class GenModel(BaseModel):
         }
 
         if after_clauses is not None:
-            target_ids, target_lengths =\
+            feed[self.target_ids], feed[self.target_lengths] =\
                 pad_sequences(sequences=after_clauses, pad_tok=PAD, go=self.config.vocab_words[GO], eos=self.config.vocab_words[EOS])
-            feed[self.target_ids] = target_ids
-            feed[self.target_lengths] = target_lengths
+            feed[self.target_learn_ids], feed[self.target_learn_lengths] =\
+                pad_sequences(sequences=after_clauses, pad_tok=PAD, eos=self.config.vocab_words[EOS])
 
         if lr is not None:
             feed[self.lr] = lr
@@ -133,7 +135,7 @@ class GenModel(BaseModel):
     def add_loss_op(self):
         with tf.variable_scope('loss'):
             masks = tf.sequence_mask(lengths=self.target_lengths, dtype=tf.float32)
-            self.loss = tf.contrib.seq2seq.sequence_loss(logits=self.train_output, targets=self.target_ids, weights=masks)
+            self.loss = tf.contrib.seq2seq.sequence_loss(logits=self.train_output, targets=self.target_learn_ids, weights=masks)
 
         # for tensorboard
         tf.summary.scalar("loss", self.loss)

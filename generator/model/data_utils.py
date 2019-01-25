@@ -158,10 +158,7 @@ def _pad_sequences(sequences, pad_tok, max_length, go=None, eos=None):
 
 def pad_sequences(sequences, pad_tok, go=None, eos=None):
     max_length = max(map(lambda x : len(x), sequences))
-    if go is not None:
-        max_length += 1
-    if eos is not None:
-        max_length += 1
+    max_length += 2
     sequence_padded, sequence_length = _pad_sequences(sequences, pad_tok, max_length, go, eos)
     return sequence_padded, sequence_length
 
