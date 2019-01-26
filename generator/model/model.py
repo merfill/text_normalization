@@ -68,9 +68,22 @@ class GenModel(BaseModel):
             _embedding = tf.Variable(tf.random_uniform([self.config.char_vocab_size+2, self.config.char_embedding_size]))
             embedding = tf.nn.embedding_lookup(_embedding, self.source_ids)
 
-            # add multilayer RNN
-            cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
-            self.encoder_output, self.encoder_state = tf.nn.dynamic_rnn(cell, embedding, sequence_length=self.source_lengths, dtype=tf.float32)
+            # add multilayer bidirectional RNN
+            cell_fw = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
+            cell_bw = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
+            outputs, states = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, embedding, sequence_length=self.source_lengths, dtype=tf.float32)
+
+            # prepare output
+            output = tf.concat(outputs, axis=-1)
+            self.encoder_output = tf.layers.dense(output, self.config.num_hidden)
+
+            # prepare state
+            state_fw, state_bw = states
+            cells = []
+            for fw, bw in zip(state_fw, state_bw):
+                state = tf.concat([fw, bw], axis=-1)
+                cells += [tf.layers.dense(state, self.config.num_hidden)]
+            self.encoder_state = tuple(cells)
 
 
     def add_decoder_cell_op(self):
