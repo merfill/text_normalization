@@ -6,7 +6,7 @@ from .data_utils import *
 
 
 class Config():
-    def __init__(self, name, load=True):
+    def __init__(self, name, load=True, use_beamsearch=False):
         """Initialize hyperparameters and load vocabs
 
         Args:
@@ -15,6 +15,7 @@ class Config():
 
         """
         self.name = name
+        self.use_beamsearch = use_beamsearch
 
         # general config
         self.dir_output = self.name + '/results/test/'

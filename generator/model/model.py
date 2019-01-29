@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import tensorflow as tf
-
+from tensorflow.python.util import nest
 
 from .data_utils import *
 from .general_utils import Progbar
@@ -94,14 +94,23 @@ class GenModel(BaseModel):
             # add multilayer RNN cell
             cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(self.config.num_hidden) for _ in range(self.config.num_encoder_layers)])
 
+            encoder_output = self.encoder_output
+            encoder_state = self.encoder_state
+            encoder_length = self.source_lengths
+            batch_size = self.batch_size
+
+            if self.config.use_beamsearch:
+                encoder_output = tf.contrib.seq2seq.tile_batch(self.encoder_output, multiplier=self.config.beam_width)
+                encoder_state = nest.map_structure(lambda s: tf.contrib.seq2seq.tile_batch(s, self.config.beam_width), self.encoder_state)
+                encoder_length = tf.contrib.seq2seq.tile_batch(self.source_lengths, multiplier=self.config.beam_width)
+                batch_size = batch_size * self.config.beam_width
+
             # add attention layer if any
-            if self.config.use_attention:
-                attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(self.config.num_hidden, self.encoder_output, memory_sequence_length=None)
-                cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism, attention_layer_size=self.config.num_hidden)
-                self.decoder_initial_state = cell.zero_state(self.batch_size, tf.float32).clone(cell_state=self.encoder_state)
-            else:
-                self.decoder_initial_state = self.encoder_state
-            self.decoder_cell = cell
+            attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(num_units=self.config.num_hidden, memory=encoder_output,
+                                                                            memory_sequence_length=encoder_length)
+            self.decoder_initial_state = encoder_state
+            self.decoder_cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism, attention_layer_size=self.config.num_hidden)
+            self.decoder_initial_state = self.decoder_cell.zero_state(batch_size, tf.float32).clone(cell_state=encoder_state)
 
             # Add projection layer
             self.projection_layer = tf.layers.Dense(self.config.word_vocab_size, use_bias=False)
@@ -135,12 +144,11 @@ class GenModel(BaseModel):
                 embedding=self.target_embedding,
                 start_tokens=tf.fill([self.batch_size], self.config.vocab_words[GO]),
                 end_token=self.config.vocab_words[EOS],
-                initial_state=tf.contrib.seq2seq.tile_batch(self.decoder_initial_state, multiplier=self.config.beam_width),
+                initial_state=self.decoder_initial_state,
                 beam_width=self.config.beam_width,
-                output_layer=self.projection_layer,
-                length_penalty_weight=.0)
+                output_layer=self.projection_layer)
             output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=self.config.max_iterations)
-            self.beamsearch_output = output.predicted_ids
+            self.beamsearch_output = output.predicted_ids[0]
 
 
     def add_loss_op(self):
@@ -156,19 +164,24 @@ class GenModel(BaseModel):
         self.add_placeholders()
         self.add_encoder_op()
         self.add_decoder_cell_op()
-        self.add_train_decoder_op()
-        self.add_greedy_decoder_op()
-        #self.add_beamsearch_decoder_op()
-        self.add_loss_op()
+        if self.config.use_beamsearch:
+            self.add_beamsearch_decoder_op()
+        else:
+            self.add_train_decoder_op()
+            self.add_greedy_decoder_op()
+            self.add_loss_op()
+            self.add_train_op(self.config.lr_method, self.lr, self.loss, self.config.clip)
 
         # Generic functions that add training op and initialize session
-        self.add_train_op(self.config.lr_method, self.lr, self.loss, self.config.clip)
         self.initialize_session() # now self.sess is defined and vars are init
 
 
     def predict_batch(self, before_clauses):
         fd = self.get_feed_dict(before_clauses, dropout=1.)
-        return self.sess.run(self.greedy_output, feed_dict=fd)
+        if self.config.use_beamsearch:
+            return self.sess.run(self.beamsearch_output, feed_dict=fd)
+        else:
+            return self.sess.run(self.greedy_output, feed_dict=fd)
 
 
     def run_epoch(self, train, dev, epoch, print_test=False):
@@ -239,11 +252,7 @@ class GenModel(BaseModel):
         return {"acc": 100*acc, 'errors': errors}
 
 
-#    def predict(self, clauses_raw):
-        #clauses = [self.config.processing_clause(w) for w in clauses_raw]
-        #if type(clauses[0]) == tuple:
-        #    clauses = zip(*clauses)
-        #pred_ids, _ = self.predict_batch([clauses])
-        #preds = [self.idx_to_tag[idx] for idx in list(pred_ids[0])]
-
-        #return preds
+    def predict(self, test):
+        fd = self.get_feed_dict(test)
+        pred = self.predict_batch(before)
+        return [self.to_text(pred, chars=False)]
