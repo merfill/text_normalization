@@ -80,17 +80,11 @@ def model_fn(features, labels, mode, params):
     #num_targets = vocab_target.size()
     with open(params['target_vocab_file']) as f:
         num_targets = sum(1 for _ in f) + params['num_oov_buckets']
-    target, learn_target, target_length = labels
 
     # source embeddings matrix
     _source_embedding = tf.Variable(tf.random_uniform([num_sources, params['embedding_size']]))
     source_ids = vocab_source.lookup(source)
     source_embedding = tf.nn.embedding_lookup(_source_embedding, source_ids)
-
-    # target embeddings matrix
-    target_embedding = tf.Variable(tf.random_uniform([num_targets, params['embedding_size']]))
-    target_ids = vocab_target.lookup(target)
-    target_learn_ids = vocab_target.lookup(learn_target)
 
     # --- encoder ---
 
@@ -128,6 +122,7 @@ def model_fn(features, labels, mode, params):
     projection_layer = tf.layers.Dense(num_targets, use_bias=False)
 
     # prediction encoder
+    target_embedding = tf.Variable(tf.random_uniform([num_targets, params['embedding_size']]))
     prediction_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
         embedding=target_embedding,
         start_tokens=tf.fill([batch_size], tf.to_int32(vocab_target.lookup(tf.fill([], '<go>')))),
@@ -137,13 +132,18 @@ def model_fn(features, labels, mode, params):
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         reverse_vocab_target = tf.contrib.lookup.index_to_string_table_from_file(params['target_vocab_file'])
-        pred_strings = reverse_vocab_tags.lookup(tf.to_int64(prediction_output.sample_id))
+        pred_strings = reverse_vocab_target.lookup(tf.to_int64(prediction_output.sample_id))
         predictions = {
-            'ids': output.sample_id,
+            'ids': prediction_output.sample_id,
             'text': pred_strings
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
     else:
+        # target embeddings matrix
+        target, learn_target, target_length = labels
+        target_ids = vocab_target.lookup(target)
+        target_learn_ids = vocab_target.lookup(learn_target)
+
         # train encoder
         _target_embedding = tf.nn.embedding_lookup(target_embedding, target_ids)
         train_helper = tf.contrib.seq2seq.TrainingHelper(_target_embedding, target_length)
@@ -178,7 +178,7 @@ if __name__ == '__main__':
         'dropout': 0.5,
         'layers': 3,
         'num_oov_buckets': 3,
-        'epochs': 15,
+        'epochs': 25,
         'batch_size': 50,
         'buffer': 15000,
         'source_vocab_file': os.path.join(DATADIR, 'vocab.source.txt'),
@@ -195,22 +195,42 @@ if __name__ == '__main__':
     cfg = tf.estimator.RunConfig(save_checkpoints_secs=120)
     estimator = tf.estimator.Estimator(model_fn, 'results/model', cfg, params)
     mkdir(estimator.eval_dir())
-    hook = tf.contrib.estimator.stop_if_no_increase_hook(estimator, 'acc', 500, min_steps=8000, run_every_secs=120)
+    hook = tf.contrib.estimator.stop_if_no_increase_hook(estimator, 'acc', 10000, min_steps=10000, run_every_secs=120)
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
     # Write predictions to file
     def write_predictions(name):
-        mkdir('results/score')
-        with open('results/score/{}.preds.txt'.format(name), 'wb') as f:
-            path = os.path.join(DATADIR, '{}.csv'.format(name))
-            test_inpf = functools.partial(input_fn, path)
-            golds_gen = generator_fn(path)
-            preds_gen = estimator.predict(test_inpf)
-            for golds, preds in zip(golds_gen, preds_gen):
-                ((source, _), (target, _, _)) = golds
-                f.write('{}\t {}\t{}\n'.format(''.join(source), ' '.join(target), ' '.join(preds['text'])))
+        path = os.path.join(DATADIR, '{}.csv'.format(name))
+        print('\n\n------------- start prediction on {}...\n'.format(path))
+        test_inpf = functools.partial(input_fn, path)
+        golds_gen = generator_fn(path)
+        preds_gen = estimator.predict(test_inpf)
+
+        def to_text(words):
+            r = []
+            for w in words:
+                if w == '<go>':
+                    continue
+                elif w == '<eos>' or w == 'UNK':
+                    break
+                r += [w]
+            return ' '.join(r)
+
+        errors = []
+        alls = 0
+        for golds, preds in zip(golds_gen, preds_gen):
+            alls += 1
+            ((source, _), (target, _, _)) = golds
+            s = to_text(target)
+            p = to_text(preds['text'])
+            if s != p:
+                errors += ['{}\t {}\t{}'.format(''.join(source), s, p)]
+        acc = (1. - (len(errors) / float(alls))) * 100.
+        print('acc: ', acc)
+        for e in errors:
+            print(e)
 
     for name in ['test', 'dev']:
         write_predictions(name)
