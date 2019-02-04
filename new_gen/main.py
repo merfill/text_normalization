@@ -73,11 +73,9 @@ def model_fn(features, labels, mode, params):
     source, source_length = features
     training = (mode == tf.estimator.ModeKeys.TRAIN)
     vocab_source = tf.contrib.lookup.index_table_from_file(vocabulary_file=params['source_vocab_file'], num_oov_buckets=params['num_oov_buckets'])
-    #num_sources = vocab_source.size()
     with open(params['source_vocab_file']) as f:
         num_sources = sum(1 for _ in f) + params['num_oov_buckets']
     vocab_target = tf.contrib.lookup.index_table_from_file(vocabulary_file=params['target_vocab_file'], num_oov_buckets=params['num_oov_buckets'])
-    #num_targets = vocab_target.size()
     with open(params['target_vocab_file']) as f:
         num_targets = sum(1 for _ in f) + params['num_oov_buckets']
 
@@ -165,7 +163,13 @@ def model_fn(features, labels, mode, params):
         if mode == tf.estimator.ModeKeys.EVAL:
             return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=metrics)
         elif mode == tf.estimator.ModeKeys.TRAIN:
-            train_op = tf.train.AdamOptimizer().minimize(loss, global_step=tf.train.get_or_create_global_step())
+            if params['clip'] > 0: # gradient clipping if clip is positive
+                optimizer = tf.train.AdamOptimizer(params['lr'])
+                grads, vs     = zip(*optimizer.compute_gradients(loss))
+                grads, gnorm  = tf.clip_by_global_norm(grads, params['clip'])
+                train_op = optimizer.apply_gradients(zip(grads, vs))
+            else:
+                train_op = tf.train.AdamOptimizer.minimize(loss, global_step=tf.train.get_or_create_global_step())
             return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
@@ -173,10 +177,12 @@ if __name__ == '__main__':
     # Params
     params = {
         'dim': 128,
+        'lr': .001,
+        'clip': .5,
         'embedding_size': 100,
         'max_iters': 50,
         'dropout': 0.5,
-        'layers': 3,
+        'layers': 5,
         'num_oov_buckets': 3,
         'epochs': 25,
         'batch_size': 50,
@@ -195,7 +201,7 @@ if __name__ == '__main__':
     cfg = tf.estimator.RunConfig(save_checkpoints_secs=120)
     estimator = tf.estimator.Estimator(model_fn, 'results/model', cfg, params)
     mkdir(estimator.eval_dir())
-    hook = tf.contrib.estimator.stop_if_no_increase_hook(estimator, 'acc', 10000, min_steps=10000, run_every_secs=120)
+    hook = tf.contrib.estimator.stop_if_no_increase_hook(estimator, 'acc', 500, min_steps=5000, run_every_secs=120)
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
@@ -208,7 +214,7 @@ if __name__ == '__main__':
         golds_gen = generator_fn(path)
         preds_gen = estimator.predict(test_inpf)
 
-        def to_text(words):
+        def to_text(words, sep=' '):
             r = []
             for w in words:
                 if w == '<go>':
@@ -216,17 +222,18 @@ if __name__ == '__main__':
                 elif w == '<eos>' or w == 'UNK':
                     break
                 r += [w]
-            return ' '.join(r)
+            return sep.join(r)
 
         errors = []
         alls = 0
         for golds, preds in zip(golds_gen, preds_gen):
             alls += 1
             ((source, _), (target, _, _)) = golds
-            s = to_text(target)
+            s = to_text(source, sep='')
+            t = to_text(target)
             p = to_text(preds['text'])
-            if s != p:
-                errors += ['{}\t {}\t{}'.format(''.join(source), s, p)]
+            if t != p:
+                errors += ['{} ? {} --> {}'.format(s, t, p)]
         acc = (1. - (len(errors) / float(alls))) * 100.
         print('acc: ', acc)
         for e in errors:
